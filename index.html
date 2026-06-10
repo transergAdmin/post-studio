@@ -439,10 +439,23 @@
     const node=$("tweet");
     const prevTransform=node.style.transform;
     node.style.transform="none"; // capture at full size
+
+    // html2canvas drops spaces at line-break positions. Swap every space for a
+    // non-breaking space before capture (never dropped), then restore after.
+    const NBSP=String.fromCharCode(160);
+    const saved=[];
+    const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT,null,false);
+    let tn; while((tn=walker.nextNode())){ saved.push([tn,tn.nodeValue]); tn.nodeValue=tn.nodeValue.split(" ").join(NBSP); }
+
     const bg = getComputedStyle($("card")).backgroundColor;
-    const canvas = await html2canvas(node,{scale:4,backgroundColor:bg,useCORS:true,
-      allowTaint:true,imageTimeout:0,logging:false});
-    node.style.transform=prevTransform;
+    let canvas;
+    try{
+      canvas = await html2canvas(node,{scale:4,backgroundColor:bg,useCORS:true,
+        allowTaint:true,imageTimeout:0,logging:false});
+    } finally {
+      saved.forEach(function(s){ s[0].nodeValue=s[1]; });   // restore original text
+      node.style.transform=prevTransform;
+    }
     return canvas;
   }
 
