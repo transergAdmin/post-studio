@@ -288,32 +288,7 @@
     gap: 14px;
   }
 
-  /* Avatar with gradient ring */
-  .avatar-ring {
-    width: 56px; height: 56px;
-    border-radius: 50%;
-    padding: 2.5px;
-    flex-shrink: 0;
-  }
-  .avatar-inner {
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    overflow: hidden;
-    border: 2px solid #000;
-  }
-  .avatar-inner img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-  .avatar-inner canvas {
-    width: 100%;
-    height: 100%;
-    display: block;
-    border-radius: 50%;
-  }
+  /* Avatar canvas (ring + image drawn via JS) */
 
   /* Name + handle */
   .name-wrap {
@@ -495,11 +470,7 @@ Your onboarding process is.</textarea>
       <div class="author-row">
         <div class="author-left">
           <!-- Avatar ring -->
-          <div class="avatar-ring" id="avatar-ring-el" style="background: #111;">
-            <div class="avatar-inner">
-              <canvas id="avatar-canvas" width="56" height="56"></canvas>
-            </div>
-          </div>
+          <canvas id="avatar-canvas" width="120" height="120" style="width:60px;height:60px;border-radius:50%;flex-shrink:0;"></canvas>
           <!-- Name/handle -->
           <div class="name-wrap">
             <div class="display-name-row">
@@ -544,63 +515,83 @@ Your onboarding process is.</div>
 let avatarDataUrl = null;
 let currentRing = 'none';
 
-// Default avatar: a simple gradient placeholder face
-function drawDefaultAvatar(canvas) {
+// Ring color stops for canvas drawing
+const RING_STOPS = {
+  none:    null,
+  rainbow: ['#ff0000','#ff7700','#ffee00','#00ff00','#0077ff','#8800ff','#ff0000'],
+  fire:    ['#ff6b00','#ffd200','#ff0000','#ff6b00'],
+  ocean:   ['#00b4d8','#0077b6','#90e0ef','#00b4d8'],
+  gold:    ['#f7971e','#ffd200','#ffcc00','#f7971e'],
+};
+
+// Draw ring + avatar onto the single canvas
+function renderAvatarCanvas(canvas, imgSrc, ring) {
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
-  const cx = w/2, cy = h/2, r = w/2;
+  const cx = w / 2, cy = h / 2;
+  const outerR = w / 2;
+  const ringThickness = w * 0.07;   // ~8px at 120px canvas
+  const gapThickness  = w * 0.035;  // ~4px black gap
+  const photoR = outerR - ringThickness - gapThickness;
 
-  // Deep dark background
-  ctx.fillStyle = '#1a1a2e';
+  ctx.clearRect(0, 0, w, h);
+
+  // 1. Draw gradient ring (or solid dark if none)
+  const stops = RING_STOPS[ring];
+  if (stops) {
+    const grad = ctx.createConicGradient(0, cx, cy);
+    stops.forEach((color, i) => grad.addColorStop(i / (stops.length - 1), color));
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 2. Black gap ring
+  ctx.fillStyle = '#000';
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI*2);
+  ctx.arc(cx, cy, outerR - ringThickness, 0, Math.PI * 2);
   ctx.fill();
 
-  // Silhouette
-  const grad = ctx.createRadialGradient(cx, cy*0.85, r*0.05, cx, cy*0.85, r*0.55);
-  grad.addColorStop(0, '#8b7355');
-  grad.addColorStop(1, '#5a4a3a');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(cx, cy*0.82, r*0.32, 0, Math.PI*2);
-  ctx.fill();
-
-  // Body
-  const bodyGrad = ctx.createLinearGradient(cx-r*0.5, cy*1.1, cx+r*0.5, h);
-  bodyGrad.addColorStop(0, '#222');
-  bodyGrad.addColorStop(1, '#111');
-  ctx.fillStyle = bodyGrad;
-  ctx.beginPath();
-  ctx.ellipse(cx, h*1.05, r*0.5, r*0.5, 0, 0, Math.PI*2);
-  ctx.fill();
-}
-
-// Draw avatar image onto canvas
-function drawAvatarImage(canvas, imgSrc) {
-  const ctx = canvas.getContext('2d');
-  const img = new Image();
-  img.onload = () => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // 3. Draw photo clipped to inner circle
+  if (imgSrc) {
+    const img = new Image();
+    img.onload = () => {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, photoR, 0, Math.PI * 2);
+      ctx.clip();
+      const size = photoR * 2;
+      ctx.drawImage(img, cx - photoR, cy - photoR, size, size);
+      ctx.restore();
+    };
+    img.src = imgSrc;
+  } else {
+    // Placeholder silhouette
     ctx.save();
     ctx.beginPath();
-    ctx.arc(canvas.width/2, canvas.height/2, canvas.width/2, 0, Math.PI*2);
+    ctx.arc(cx, cy, photoR, 0, Math.PI * 2);
     ctx.clip();
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, w, h);
     ctx.restore();
-  };
-  img.src = imgSrc;
+  }
+}
+
+// drawAvatarImage: kept for compatibility — delegates to renderAvatarCanvas
+function drawAvatarImage(canvas, imgSrc) {
+  renderAvatarCanvas(canvas, imgSrc, currentRing);
 }
 
 function applyRing(ring) {
-  const el = document.getElementById('avatar-ring-el');
-  const gradients = {
-    none:    'linear-gradient(#111, #111)',
-    rainbow: 'conic-gradient(#ff0000, #ff7700, #ffee00, #00ff00, #0077ff, #8800ff, #ff0000)',
-    fire:    'conic-gradient(#ff6b00, #ffd200, #ff0000, #ff6b00)',
-    ocean:   'conic-gradient(#00b4d8, #0077b6, #90e0ef, #00b4d8)',
-    gold:    'conic-gradient(#f7971e, #ffd200, #ffcc00, #f7971e)',
-  };
-  el.style.background = gradients[ring] || gradients.none;
+  currentRing = ring;
+  const canvas = document.getElementById('avatar-canvas');
+  renderAvatarCanvas(canvas, avatarDataUrl, ring);
 }
 
 // ── Bindings ──
@@ -721,8 +712,8 @@ function setField(inpId, outId, value, isHandle) {
   avatarDataUrl = DEFAULT_AVATAR;
 
   const canvas = document.getElementById('avatar-canvas');
-  canvas.width = 100; canvas.height = 100;
-  drawAvatarImage(canvas, DEFAULT_AVATAR);
+  canvas.width = 120; canvas.height = 120;
+  renderAvatarCanvas(canvas, DEFAULT_AVATAR, 'rainbow');
 
   // Set preview avatar img
   document.getElementById('avatar-preview-img').src = DEFAULT_AVATAR;
